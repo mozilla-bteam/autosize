@@ -47,10 +47,8 @@ function assign(ta) {
 	function init() {
 		const style = window.getComputedStyle(ta, null);
 
-		if (style.resize === 'vertical') {
-			ta.style.resize = 'none';
-		} else if (style.resize === 'both') {
-			ta.style.resize = 'horizontal';
+		if (style.resize === 'both') {
+			ta.style.resize = 'vertical';
 		}
 
 		if (style.boxSizing === 'content-box') {
@@ -62,6 +60,50 @@ function assign(ta) {
 		if (isNaN(heightOffset)) {
 			heightOffset = 0;
 		}
+
+		var mouseDownListener = () => {
+			// suspend maximum height so that user can resize to greater
+			// than it
+			var oldStyle = {
+				'overflow': ta.style.overflow,
+				'overflow-wrap': ta.style['overflow-wrap'],
+				'overflowX': ta.style.overflowX,
+				'overflowY': ta.style.overflowY,
+				'wordWrap': ta.style.wordWrap,
+				'max-height': ta.style['max-height']
+			}
+			ta.style.height = ta.offsetHeight + 'px';
+			ta.style['max-height'] = 'none';
+			ta.setAttribute('user-resized', 1);
+			var heightBefore = ta.clientHeight;
+			var destroyed = false;
+			var mouseMoveListener = () => {
+				var heightAfter = ta.clientHeight;
+				if (heightAfter !== heightBefore) {
+					oldStyle['max-height'] = 'none';
+					// reset any overflow properties
+					ta.removeEventListener('mousemove', mouseMoveListener);
+					ta.removeEventListener('mousedown', mouseDownListener);
+					destroy(ta);
+					destroyed = true;
+				}
+			};
+			ta.addEventListener('mousemove', mouseMoveListener);
+			ta.addEventListener('mouseup', () => {
+				ta.style['max-height'] = oldStyle['max-height'];
+				// we need to do this complicated song & dance because
+				// if we reset the style in destroy the resize gets
+				// interrupted
+				if (destroyed) {
+					Object.keys(oldStyle).forEach((styleName) => {
+						ta.style[styleName] = oldStyle[styleName];
+					});
+				}
+				ta.removeEventListener('mouseup', this);
+				ta.removeEventListener('mousemove', mouseMoveListener);
+			});
+		};
+		ta.addEventListener('mousedown', mouseDownListener);
 
 		update();
 	}
@@ -173,25 +215,15 @@ function assign(ta) {
 		}
 	};
 
-	const destroy = style => {
+	const destroy = () => {
 		window.removeEventListener('resize', pageResize, false);
 		ta.removeEventListener('input', update, false);
 		ta.removeEventListener('keyup', update, false);
 		ta.removeEventListener('autosize:destroy', destroy, false);
 		ta.removeEventListener('autosize:update', update, false);
 
-		Object.keys(style).forEach(key => {
-			ta.style[key] = style[key];
-		});
-
 		map.delete(ta);
-	}.bind(ta, {
-		height: ta.style.height,
-		resize: ta.style.resize,
-		overflowY: ta.style.overflowY,
-		overflowX: ta.style.overflowX,
-		wordWrap: ta.style.wordWrap,
-	});
+	};
 
 	ta.addEventListener('autosize:destroy', destroy, false);
 
